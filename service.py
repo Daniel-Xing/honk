@@ -70,38 +70,67 @@ class Caffe2LabelService(LabelService):
         return (self.labels[np.argmax(predictions)], np.max(predictions))
 
 class TorchLabelService(LabelService):
+    """
+    使用 PyTorch 实现的标签服务类。
+
+    参数：
+        model_filename: 模型文件名
+        no_cuda: 是否禁用 CUDA，默认为 False
+        labels: 训练的标签列表，默认为 ["_silence_", "_unknown_", "command", "random"]
+
+    方法：
+        __init__: 初始化 TorchLabelService 对象
+        reload: 重新加载模型
+        label: 对音频数据进行标签预测
+    """
+
     def __init__(self, model_filename, no_cuda=False, labels=["_silence_", "_unknown_", "command", "random"]):
+        """
+        初始化 TorchLabelService 对象。
+
+        参数：
+            model_filename: 模型文件名
+            no_cuda: 是否禁用 CUDA，默认为 False
+            labels: 训练的标签列表，默认为 ["_silence_", "_unknown_", "command", "random"]
+        """
         self.labels = labels
         self.model_filename = model_filename
         self.no_cuda = no_cuda
-        self.audio_processor = AudioPreprocessor()
-        self.reload()
+        self.audio_processor = AudioPreprocessor()  # 创建音频预处理器对象
+        self.reload()  # 加载模型
 
     def reload(self):
-        config = model.find_config(model.ConfigType.CNN_TRAD_POOL2)
-        config["n_labels"] = len(self.labels)
-        self.model = model.SpeechModel(config)
+        """
+        重新加载模型。
+        """
+        config = model.find_config(model.ConfigType.CNN_TRAD_POOL2)  # 获取模型配置
+        config["n_labels"] = len(self.labels)  # 设置标签数
+        self.model = model.SpeechModel(config)  # 创建语音模型对象
         if not self.no_cuda:
-            self.model.cuda()
-        self.model.load(self.model_filename)
-        self.model.eval()
+            self.model.cuda()  # 将模型移动到 CUDA 上（如果可用）
+        self.model.load(self.model_filename)  # 加载模型
+        self.model.eval()  # 设置模型为评估模式
 
     def label(self, wav_data):
-        """Labels audio data as one of the specified trained labels
-
-        Args:
-            wav_data: The WAVE to label
-
-        Returns:
-            A (most likely label, probability) tuple
         """
-        wav_data = np.frombuffer(wav_data, dtype=np.int16) / 32768.
+        对音频数据进行标签预测。
+
+        参数：
+            wav_data: 需要进行标签预测的音频数据
+
+        返回值：
+            最可能的标签和对应的概率的元组
+        """
+        wav_data = np.frombuffer(wav_data, dtype=np.int16) / 32768.  # 将音频数据转换为浮点数
         model_in = torch.from_numpy(self.audio_processor.compute_mfccs(wav_data).squeeze(2)).unsqueeze(0)
+        # 计算音频的 MFCC 特征并转换为模型输入的格式
         model_in = torch.autograd.Variable(model_in, requires_grad=False)
         if not self.no_cuda:
-            model_in = model_in.cuda()
+            model_in = model_in.cuda()  # 将输入移动到 CUDA 上（如果可用）
         predictions = F.softmax(self.model(model_in).squeeze(0).cpu()).data.numpy()
+        # 使用模型进行预测，并将结果转换为概率分布
         return (self.labels[np.argmax(predictions)], np.max(predictions))
+        # 返回最可能的标签和对应的概率的元组
 
 def stride(array, stride_size, window_size):
     i = 0
@@ -111,6 +140,15 @@ def stride(array, stride_size, window_size):
 
 class TrainingService(object):
     def __init__(self, train_script, speech_dataset_path, options):
+        """
+        初始化训练服务对象。
+
+        参数：
+            train_script: 训练脚本的路径
+            speech_dataset_path: 语音数据集的路径
+            options: 训练选项
+
+        """
         self.train_script = train_script
         self.neg_directory = os.path.join(speech_dataset_path, "random")
         self.pos_directory = os.path.join(speech_dataset_path, "command")
@@ -120,12 +158,24 @@ class TrainingService(object):
         self._create_dirs()
 
     def _create_dirs(self):
+        """
+        创建用于存储训练数据的目录。
+        """
         if not os.path.exists(self.neg_directory):
             os.makedirs(self.neg_directory)
         if not os.path.exists(self.pos_directory):
             os.makedirs(self.pos_directory)
 
     def generate_contrastive(self, data):
+        """
+        生成对比训练样本。
+
+        参数：
+            data: 音频数据
+
+        返回值：
+            对比训练样本的列表
+        """
         snippet = AudioSnippet(data)
         phoneme_chunks = AudioSnippet(data).chunk_phonemes()
         phoneme_chunks2 = AudioSnippet(data).chunk_phonemes(factor=0.8, group_threshold=500)
@@ -151,6 +201,14 @@ class TrainingService(object):
         return chunks
 
     def clear_examples(self, positive=True, tag=""):
+        """
+        清除训练样本。
+
+        参数：
+            positive: 是否清除正例样本，默认为 True
+            tag: 样本标签，默认为空
+
+        """
         directory = self.pos_directory if positive else self.neg_directory
         if not tag:
             shutil.rmtree(directory)
@@ -161,6 +219,16 @@ class TrainingService(object):
                     os.unlink(os.path.join(directory, name))
 
     def write_example(self, wav_data, positive=True, filename=None, tag=""):
+        """
+        写入训练样本。
+
+        参数：
+            wav_data: 音频数据
+            positive: 是否为正例样本，默认为 True
+            filename: 文件名，默认为 None
+            tag: 样本标签，默认为空
+
+        """
         if tag:
             tag = "{}-".format(tag)
         if not filename:
@@ -170,12 +238,27 @@ class TrainingService(object):
         AudioSnippet(wav_data).save(filename)
 
     def _run_script(self, script, options):
+        """
+        运行外部脚本。
+
+        参数：
+            script: 脚本的路径
+            options: 选项参数
+
+        """
         cmd_strs = ["python", script]
         for option, value in options.items():
             cmd_strs.append("--{}={}".format(option, value))
         subprocess.run(cmd_strs)
 
     def _run_training_script(self, callback):
+        """
+        运行训练脚本。
+
+        参数：
+            callback: 回调函数
+
+        """
         with self._run_lck:
             self.script_running = True
         self._run_script(self.train_script, self.options)
@@ -184,7 +267,18 @@ class TrainingService(object):
         self.script_running = False
 
     def run_train_script(self, callback=None):
+        """
+        运行训练脚本。
+
+        参数：
+            callback: 训练结束时的回调函数
+
+        返回值：
+            是否成功启动训练脚本的标志
+
+        """
         if self.script_running:
             return False
         threading.Thread(target=self._run_training_script, args=(callback,)).start()
         return True
+

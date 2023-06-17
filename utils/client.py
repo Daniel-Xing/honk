@@ -19,6 +19,7 @@ import speech_recognition as sr
 
 from manage_audio import AudioSnippet
 
+
 class GooseWindow(Thread):
     def __init__(self, assets_dir):
         Thread.__init__(self)
@@ -54,9 +55,16 @@ class GooseWindow(Thread):
         Thread(target=self._open_mouth, args=(length_secs,)).start()
 
     def draw_goose(self, name):
-        self.canvas.create_image(32, 32, image=self.images[name], anchor=NW, tags="image1" if self._switch else "image2")
+        self.canvas.create_image(
+            32,
+            32,
+            image=self.images[name],
+            anchor=NW,
+            tags="image1" if self._switch else "image2",
+        )
         self.canvas.delete("image2" if self._switch else "image1")
         self._switch = not self._switch
+
 
 def clean_text(text):
     if not text:
@@ -68,19 +76,26 @@ def clean_text(text):
             words.append(tok)
     return " ".join(words).replace(" .", ".")
 
+
 class WatsonApi(object):
     def __init__(self, username, password):
         self.auth = requests.auth.HTTPBasicAuth(username, password)
 
     def fetch_tts(self, text):
         ep = "https://stream.watsonplatform.net/text-to-speech/api/v1/synthesize"
-        response = requests.get(ep, params=dict(accept="audio/wav", text=text, voice="en-US_AllisonVoice"), stream=True, auth=self.auth)
+        response = requests.get(
+            ep,
+            params=dict(accept="audio/wav", text=text, voice="en-US_AllisonVoice"),
+            stream=True,
+            auth=self.auth,
+        )
         buf = io.BytesIO()
         for chunk in response.iter_content(chunk_size=1024):
             if chunk:
                 buf.write(chunk)
         buf.seek(0)
         return buf
+
 
 def play_audio(data, amplitude_cb=None):
     with wave.open(data) as f:
@@ -89,7 +104,8 @@ def play_audio(data, amplitude_cb=None):
             format=audio.get_format_from_width(f.getsampwidth()),
             channels=f.getnchannels(),
             rate=f.getframerate(),
-            output=True)
+            output=True,
+        )
         data = f.readframes(512)
         while data:
             if amplitude_cb:
@@ -100,6 +116,7 @@ def play_audio(data, amplitude_cb=None):
         stream.stop_stream()
         stream.close()
         audio.terminate()
+
 
 class Client(object):
     def __init__(self, server_endpoint, qa_endpoint, goose_window, watson_api=None):
@@ -124,20 +141,28 @@ class Client(object):
     def _make_tts_cb(self):
         def on_start(name, location, length):
             self.goose_window.open_mouth(length / 40)
+
         def on_amplitude(amplitude):
             if amplitude > 0.05:
                 self.goose_window.draw_goose("open")
             else:
                 self.goose_window.draw_goose("awake")
+
         return on_amplitude if self.watson_api else on_start
 
     def contains_command(self, data):
         data = base64.b64encode(zlib.compress(data))
-        response = requests.post("{}/listen".format(self.server_endpoint), json=dict(wav_data=data.decode(), method="command_tagging"))
+        response = requests.post(
+            "{}/listen".format(self.server_endpoint),
+            json=dict(wav_data=data.decode(), method="command_tagging"),
+        )
         return json.loads(response.content.decode())["contains_command"]
 
     def query_qa(self, question):
-        response = requests.post("{}/answer".format(self.qa_endpoint), json=dict(question=question, num_hits=1))
+        response = requests.post(
+            "{}/answer".format(self.qa_endpoint),
+            json=dict(question=question, num_hits=1),
+        )
         response = json.loads(response.content.decode())
         try:
             return response["answers"][0]["passage"]
@@ -157,7 +182,13 @@ class Client(object):
 
     def _start_listening(self):
         self.audio = pyaudio.PyAudio()
-        self.stream = self.audio.open(format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=self.chunk_size)
+        self.stream = self.audio.open(
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=16000,
+            input=True,
+            frames_per_buffer=self.chunk_size,
+        )
 
     def _stop_listening(self):
         self.stream.stop_stream()
@@ -166,13 +197,18 @@ class Client(object):
 
     def send_retarget_data(self, data, positive=True):
         data = base64.b64encode(zlib.compress(data))
-        requests.post("{}/data".format(self.server_endpoint), json=dict(wav_data=data.decode(), positive=positive))
+        requests.post(
+            "{}/data".format(self.server_endpoint),
+            json=dict(wav_data=data.decode(), positive=positive),
+        )
 
     def _retarget_negative(self, n_minutes=1):
         if n_minutes == 1:
             self.say_text("Please speak random words for the next minute.")
         else:
-            self.say_text("Please speak random words for the next {} minutes.".format(n_minutes))
+            self.say_text(
+                "Please speak random words for the next {} minutes.".format(n_minutes)
+            )
         t0 = 0
         snippet = AudioSnippet()
         while t0 < n_minutes * 60:
@@ -220,7 +256,7 @@ class Client(object):
         self._start_listening()
         requests.delete("{}/data".format(self.server_endpoint))
         self._retarget_positive()
-        #self._retarget_negative()
+        # self._retarget_negative()
         self._do_retarget()
 
     def start_live_qa(self):
@@ -228,12 +264,12 @@ class Client(object):
         print("Speak Anserini when ready!")
         buf = [self.stream.read(self.chunk_size), self.stream.read(self.chunk_size)]
         while True:
-            if self.contains_command(b''.join(buf)):
+            if self.contains_command(b"".join(buf)):
                 self.goose_window.draw_goose("awake")
                 print("Detected Anserini! Ask away...")
 
                 question = self._recognize_speech()
-                print("You asked, \"{}\"".format(question))
+                print('You asked, "{}"'.format(question))
                 answer = clean_text(self.query_qa(question))
                 if answer:
                     print("Answer: {}".format(answer))
@@ -241,11 +277,15 @@ class Client(object):
                 else:
                     print("No answer available!")
 
-                buf = [self.stream.read(self.chunk_size), self.stream.read(self.chunk_size)]
+                buf = [
+                    self.stream.read(self.chunk_size),
+                    self.stream.read(self.chunk_size),
+                ]
                 self.goose_window.draw_goose("inactive")
                 continue
             buf[0] = buf[1]
             buf[1] = self.stream.read(self.chunk_size)
+
 
 def start_client(flags):
     file_dir = os.path.dirname(os.path.realpath(__file__))
@@ -259,35 +299,34 @@ def start_client(flags):
     elif flags.mode == "retarget":
         client.start_retarget()
 
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--server-endpoint",
         type=str,
         default="http://127.0.0.1:16888",
-        help="The endpoint to use")
+        help="The endpoint to use",
+    )
     parser.add_argument(
         "--mode",
         type=str,
         default="query",
         choices=["retarget", "query"],
-        help="The mode to run the client in.")
+        help="The mode to run the client in.",
+    )
     parser.add_argument(
-        "--qa-endpoint",
-        type=str,
-        default="http://dragon00.cs.uwaterloo.ca:80")
+        "--qa-endpoint", type=str, default="http://dragon00.cs.uwaterloo.ca:80"
+    )
     parser.add_argument(
-        "--watson-username",
-        type=str,
-        default="",
-        help="If supplied, uses Watson's TTS")
+        "--watson-username", type=str, default="", help="If supplied, uses Watson's TTS"
+    )
     parser.add_argument(
-        "--watson-password",
-        type=str,
-        default="",
-        help="If supplied, uses Watson's TTS")
+        "--watson-password", type=str, default="", help="If supplied, uses Watson's TTS"
+    )
     flags, _ = parser.parse_known_args()
     start_client(flags)
+
 
 if __name__ == "__main__":
     main()

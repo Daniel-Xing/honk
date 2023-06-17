@@ -6,11 +6,13 @@ import wave
 from .manage_audio import AudioSnippetGenerator
 from server import load_service
 
+
 class KeyInput(enum.Enum):
     QUIT = b"q"
     REDO = b"\x1b[A"
 
-def record_speech_sequentially(min_sound_lvl=0.01, speech_timeout_secs=1.):
+
+def record_speech_sequentially(min_sound_lvl=0.01, speech_timeout_secs=1.0):
     """Records audio in sequential audio files.
 
     Args:
@@ -54,28 +56,40 @@ def record_speech_sequentially(min_sound_lvl=0.01, speech_timeout_secs=1.):
                     print("Recorded #{:<10}".format(i))
                     break
 
+
 def trim_sequence(samples, cutoff_ms):
     for sample in samples:
         n_samples = int((cutoff_ms / 1000) * 16000)
         sample.trim_window(n_samples * 2)
     return samples
 
+
 def do_record_sequence():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--min-sound-lvl", type=float, default=0.01, 
-        help="Minimum sound level at which audio is not considered silent")
+        "--min-sound-lvl",
+        type=float,
+        default=0.01,
+        help="Minimum sound level at which audio is not considered silent",
+    )
     parser.add_argument(
-        "--timeout-seconds", type=float, default=1.,
-        help="Duration of silence after which recording halts")
+        "--timeout-seconds",
+        type=float,
+        default=1.0,
+        help="Duration of silence after which recording halts",
+    )
     flags, _ = parser.parse_known_args()
-    return record_speech_sequentially(min_sound_lvl=flags.min_sound_lvl, speech_timeout_secs=flags.timeout_seconds)
+    return record_speech_sequentially(
+        min_sound_lvl=flags.min_sound_lvl, speech_timeout_secs=flags.timeout_seconds
+    )
+
 
 def do_trim(audio_samples):
     parser = argparse.ArgumentParser()
     parser.add_argument("--cutoff-ms", type=int, default=1000)
     flags, _ = parser.parse_known_args()
     trim_sequence(audio_samples, flags.cutoff_ms)
+
 
 def do_discard_true(audio_samples):
     parser = argparse.ArgumentParser()
@@ -96,6 +110,7 @@ def do_discard_true(audio_samples):
         print("#{:<5} Action: {:<8} Label: {}".format(i, action, label))
     return false_samples
 
+
 def main():
     parser = argparse.ArgumentParser()
     record_choices = ["sequence"]
@@ -103,7 +118,9 @@ def main():
     parser.add_argument("--mode", type=str, default="sequence", choices=record_choices)
     parser.add_argument("--output-begin-index", type=int, default=0)
     parser.add_argument("--output-prefix", type=str, default="output")
-    parser.add_argument("--post-process", nargs="+", type=str, choices=process_choices, default=[])
+    parser.add_argument(
+        "--post-process", nargs="+", type=str, choices=process_choices, default=[]
+    )
     args, _ = parser.parse_known_args()
 
     if args.mode == "sequence":
@@ -122,6 +139,7 @@ def main():
             f.setframerate(16000)
             f.writeframes(snippet.byte_data)
         print("Saved {}.".format(fullpath))
+
 
 if __name__ == "__main__":
     main()

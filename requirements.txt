@@ -3,7 +3,8 @@ cherrypy>=11.0.0,<=11.99
 librosa>=0.6.2,<=0.6.3
 Flask>=0.12.1
 numpy>=1.12
-Pillow>=4.0.0,<=4.99
+# Pillow>=4.0.0,<=4.99
+Pillow>=6.2.1
 PyAudio>=0.2
 PyOpenGL>=3.1.0,<=3.1.99
 PyOpenGL_accelerate
