@@ -13,6 +13,9 @@ import copy  # 导入copy模块，提供对象的复制操作
 
 from . import model as mod  # 导入自定义模块.model并将其重命名为mod
 from .manage_audio import AudioPreprocessor  # 导入自定义模块.manage_audio中的AudioPreprocessor类
+from torch.utils.tensorboard import SummaryWriter
+# default `log_dir` is "logs" - we'll be more specific here
+writer = SummaryWriter('logs/speech')
 
 
 class ConfigBuilder(object):
@@ -71,7 +74,7 @@ class ConfigBuilder(object):
         return ChainMap(args, self.default_config)  # 将解析后的结果与默认配置进行合并创建ChainMap对象
 
 
-def print_eval(name, scores, labels, loss, end="\n"):
+def print_eval(name, scores, labels, loss, end="\n", global_step = 0):
     """
     打印评估结果。
 
@@ -94,6 +97,12 @@ def print_eval(name, scores, labels, loss, end="\n"):
     print(
         "{} accuracy: {:>5}, loss: {:<25}".format(name, accuracy, loss), end=end
     )  # 打印评估结果
+    
+    if global_step != 0:
+        print("写入tensorBoard   ", "global_step:{:>5} accuracy: {:>5}, loss: {:<25}".format(global_step, accuracy, loss), end=end)
+        writer.add_scalar('Loss/train', loss, global_step)
+        writer.add_scalar('Accuracy/train', accuracy, global_step)
+        
     return accuracy.item()  # 返回准确率的值
 
 
@@ -229,6 +238,7 @@ def train(config):
 
     for epoch_idx in range(config["n_epochs"]):
         # 遍历每个训练周期
+        # initialize the running loss for visualization
         for batch_idx, (model_in, labels) in enumerate(train_loader):
             # 遍历训练数据加载器中的批次数据
             model.train()  # 设置模型为训练模式
@@ -257,8 +267,9 @@ def train(config):
                 )  # 更新优化器的学习率
 
             print_eval(
-                "train step #{}".format(step_no), scores, labels, loss
+                "train step #{}".format(step_no), scores, labels, loss, global_step=step_no
             )  # 打印训练过程的评估结果
+            
 
         if epoch_idx % config["dev_every"] == config["dev_every"] - 1:
             # 如果达到了进行开发集评估的周期
@@ -273,6 +284,7 @@ def train(config):
                 labels = Variable(labels, requires_grad=False)
                 loss = criterion(scores, labels)  # 计算损失值
                 accs.append(print_eval("dev", scores, labels, loss))  # 计算并存储准确率
+                
             avg_acc = np.mean(accs)  # 计算平均准确率
             print("final dev accuracy: {}".format(avg_acc))  # 打印最终的开发集准确率
 
@@ -328,6 +340,9 @@ def main():
         train(config)
     elif config["type"] == "eval":
         evaluate(config)
+        
+    # close writer
+    writer.close()
 
 
 if __name__ == "__main__":
