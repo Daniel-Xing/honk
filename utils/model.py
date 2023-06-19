@@ -5,7 +5,7 @@ import os
 import random
 import re
 
-from chainmap import ChainMap
+from collections import ChainMap
 from torch.autograd import Variable
 import librosa
 import numpy as np
